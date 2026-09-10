@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>局域网投送站</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="console-shell">
+      <div class="top-rule" aria-hidden="true">
+        <span></span><span></span><span></span><span></span><span></span>
+      </div>
+
+      <header class="masthead">
+        <div>
+          <p class="eyebrow">LOCAL SIGNAL / 01</p>
+          <h1>局域网投送站</h1>
+        </div>
+        <span class="status-lamp" id="statusLamp" aria-hidden="true"></span>
+      </header>
+
+      <section class="switch-panel">
+        <div>
+          <strong id="switchTitle">接收已关闭</strong>
+          <p id="statusMessage">开启后，手机才能访问这台 Mac</p>
+        </div>
+        <button class="power-switch" id="powerButton" type="button" aria-pressed="false">
+          <span></span>
+          <em>OFF</em>
+        </button>
+      </section>
+
+      <section class="active-panel" id="activePanel" hidden>
+        <div class="timer-row">
+          <span>本次窗口</span>
+          <strong id="countdown">10:00</strong>
+        </div>
+
+        <div class="address-card">
+          <div class="qr-frame">
+            <canvas id="qrCanvas" aria-label="手机访问二维码"></canvas>
+          </div>
+          <div class="address-copy">
+            <span>PHONE ENTRY</span>
+            <p id="mobileUrl">正在获取地址…</p>
+            <button id="copyUrlButton" type="button">复制地址</button>
+          </div>
+        </div>
+
+        <p class="network-note" id="networkNote">手机和 Mac 需要连接同一局域网</p>
+        <p class="save-note" id="saveNote">文件保存到 ~/Documents/局域网互传</p>
+      </section>
+
+      <section class="summary-panel">
+        <span>本次已接收</span>
+        <strong id="itemCount">0</strong>
+        <span>项</span>
+        <button id="openReceiverButton" type="button">打开接收页</button>
+      </section>
+
+      <footer>
+        <span>TEXT</span>
+        <span>IMAGE</span>
+        <span>FILE</span>
+        <i>不经过云端</i>
+      </footer>
+
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </main>
+
+    <script src="vendor/qrcode.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

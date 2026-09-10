@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0c110d" />
+    <title>发送到 Mac</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="signal-grid" aria-hidden="true"></div>
+
+    <main>
+      <header class="site-header">
+        <div class="brand">
+          <span class="brand-mark">RX</span>
+          <div>
+            <p>LOCAL TRANSFER</p>
+            <h1>发送到 Mac</h1>
+          </div>
+        </div>
+        <div class="connection" id="connectionStatus">
+          <span></span>
+          <strong>正在连接</strong>
+        </div>
+      </header>
+
+      <section class="intro">
+        <span class="section-index">01 / INPUT</span>
+        <p>选择一种内容。所有传输只在当前局域网内完成，不经过云端。</p>
+      </section>
+
+      <section class="transfer-card text-transfer">
+        <header>
+          <div>
+            <span>TEXT CHANNEL</span>
+            <h2>发送文本</h2>
+          </div>
+          <strong id="textCounter">0 / 64 KB</strong>
+        </header>
+        <textarea
+          id="textInput"
+          rows="7"
+          spellcheck="false"
+          autocomplete="off"
+          placeholder="在这里输入或粘贴 Token、JSON、Cookie、调试参数或普通文字…"
+        ></textarea>
+        <button class="primary-button" id="sendTextButton" type="button">
+          <span>发送文本</span>
+          <i aria-hidden="true">↗</i>
+        </button>
+      </section>
+
+      <section class="transfer-card file-transfer" id="dropZone">
+        <header>
+          <div>
+            <span>FILE CHANNEL</span>
+            <h2>发送图片或文件</h2>
+          </div>
+          <strong id="fileLimit">单个 100 MB</strong>
+        </header>
+
+        <div class="file-actions">
+          <label class="file-picker">
+            <input id="imageInput" type="file" accept="image/*" multiple />
+            <span class="picker-icon" aria-hidden="true">▧</span>
+            <strong>选择图片</strong>
+            <small>相册或相机</small>
+          </label>
+          <label class="file-picker">
+            <input id="fileInput" type="file" multiple />
+            <span class="picker-icon" aria-hidden="true">□</span>
+            <strong>选择文件</strong>
+            <small>任意文件类型</small>
+          </label>
+        </div>
+
+        <div class="selected-files" id="selectedFiles" hidden></div>
+
+        <button class="primary-button" id="sendFilesButton" type="button" disabled>
+          <span>发送所选内容</span>
+          <i aria-hidden="true">↗</i>
+        </button>
+      </section>
+
+      <aside class="privacy-strip">
+        <span class="privacy-icon" aria-hidden="true"></span>
+        <div>
+          <strong>直接保存到“文稿/局域网互传”</strong>
+          <p>图片和文件会保存在 Mac 的 Documents/局域网互传，关闭接收后仍会保留。</p>
+        </div>
+      </aside>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
