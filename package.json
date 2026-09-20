@@ -4,7 +4,7 @@
   "private": true,
   "description": "On-demand LAN receiver for text, images and files.",
   "scripts": {
-    "check": "node --check extension/background.js && node --check extension/popup.js && node --check extension/receiver.js && node --check native-host/host.js && node --check native-host/server.js && node --check native-host/public/app.js",
+    "check": "node --check extension/background.js && node --check extension/popup.js && node --check extension/receiver.js && node --check extension/send-panel.js && node --check native-host/host.js && node --check native-host/server.js && node --check native-host/public/app.js",
     "test": "node --test tests/*.test.js"
   },
   "engines": {

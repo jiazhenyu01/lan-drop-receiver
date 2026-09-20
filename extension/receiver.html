@@ -32,7 +32,7 @@
           </div>
           <div class="access-details">
             <span class="access-label">PHONE ENTRY</span>
-            <h2>手机扫码发送</h2>
+            <h2>手机扫码互传</h2>
             <div class="access-address-row">
               <p class="access-url" id="receiverMobileUrl">正在获取地址…</p>
               <button id="receiverCopyUrlButton" type="button">复制地址</button>
@@ -47,6 +47,7 @@
     </header>
 
     <main>
+      <send-panel></send-panel>
       <section class="control-rail">
         <div>
           <span class="rail-label">RECEIVED</span>
@@ -112,6 +113,7 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <script src="vendor/qrcode.js"></script>
+    <script src="send-panel.js"></script>
     <script src="receiver.js"></script>
   </body>
 </html>

@@ -12,6 +12,12 @@ const sendFilesButton = document.getElementById("sendFilesButton");
 const fileLimit = document.getElementById("fileLimit");
 const dropZone = document.getElementById("dropZone");
 const toast = document.getElementById("toast");
+const downloadFiles = document.getElementById("downloadFiles");
+const downloadStatus = document.getElementById("downloadStatus");
+const refreshFiles = document.getElementById("refreshFiles");
+let downloadTimer;
+let loadingDownloads = false;
+let downloadSignature = "";
 
 let limits = {
   maxTextBytes: 64 * 1024,
@@ -65,7 +71,9 @@ async function loadConfig() {
     throw new Error("访问链接缺少接收密钥，请重新扫描 Mac 上的二维码");
   }
 
-  const response = await fetch("/api/config", { cache: "no-store" });
+  const response = await fetch("/api/config", {
+    cache: "no-store", headers: { "X-Session-Token": sessionToken }
+  });
   if (!response.ok) {
     throw new Error(await readError(response));
   }
@@ -74,6 +82,66 @@ async function loadConfig() {
   fileLimit.textContent = `单个 ${formatBytes(limits.maxFileBytes)}`;
   updateTextCounter();
   setConnection("live", "已连接");
+}
+
+// Poll metadata only; each file is downloaded by the browser without buffering it in JavaScript.
+async function loadDownloads() {
+  if (loadingDownloads) return;
+  window.clearTimeout(downloadTimer);
+  if (!sessionToken) {
+    downloadStatus.textContent = "请重新扫描电脑上的二维码";
+    return;
+  }
+  loadingDownloads = true;
+  refreshFiles.disabled = true;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 10000);
+  let retry = true;
+  try {
+    const response = await fetch("/api/outgoing", {
+      cache: "no-store", headers: { "X-Session-Token": sessionToken }, signal: controller.signal
+    });
+    if (response.status === 401) retry = false;
+    if (!response.ok) throw new Error(await readError(response));
+    const data = await response.json();
+    const signature = JSON.stringify(data.items);
+    if (signature !== downloadSignature) {
+      downloadFiles.replaceChildren();
+      for (const item of data.items) {
+        const row = document.createElement("div");
+        row.className = "download-file";
+        const info = document.createElement("div");
+        const name = document.createElement("strong");
+        name.textContent = item.name;
+        const size = document.createElement("span");
+        size.textContent = formatBytes(item.size);
+        info.append(name, size);
+        const link = document.createElement("a");
+        link.textContent = "下载";
+        link.download = item.name;
+        link.href = `/api/outgoing/${encodeURIComponent(item.id)}?key=${encodeURIComponent(sessionToken)}`;
+        row.append(info, link);
+        downloadFiles.append(row);
+      }
+      downloadSignature = signature;
+    }
+    downloadStatus.textContent = data.items.length
+      ? `${data.items.length} 个文件可下载`
+      : "等待电脑发送文件，列表会自动更新";
+    setConnection("live", "已连接");
+  } catch (error) {
+    downloadFiles.replaceChildren();
+    downloadSignature = "";
+    downloadStatus.textContent = retry
+      ? "连接中断或会话已结束，请确认电脑已开启传输；重新开启后请重新扫码。"
+      : error.message;
+    setConnection("error", "无法连接");
+  } finally {
+    window.clearTimeout(timeout);
+    loadingDownloads = false;
+    refreshFiles.disabled = false;
+    if (retry) downloadTimer = window.setTimeout(loadDownloads, 3000);
+  }
 }
 
 function updateTextCounter() {
@@ -245,6 +313,8 @@ sendTextButton.addEventListener("click", sendText);
 imageInput.addEventListener("change", () => addFiles(imageInput.files));
 fileInput.addEventListener("change", () => addFiles(fileInput.files));
 sendFilesButton.addEventListener("click", sendFiles);
+refreshFiles.addEventListener("click", loadDownloads);
+loadDownloads();
 
 ["dragenter", "dragover"].forEach((eventName) => {
   dropZone.addEventListener(eventName, (event) => {

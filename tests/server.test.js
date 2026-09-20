@@ -6,6 +6,7 @@ const fsp = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
+const http = require("node:http");
 const {
   createReceiverSession,
   defaultDownloadDirectory,
@@ -229,4 +230,128 @@ test("a listen failure does not create the receive directory", async () => {
   } finally {
     await fsp.rm(testRoot, { recursive: true, force: true });
   }
+});
+
+async function sendToPhone(session, name, bytes, token = session.started.desktopToken) {
+  return fetch(`http://127.0.0.1:${session.started.port}/api/outgoing`, {
+    method: "POST",
+    headers: { "X-Desktop-Token": token, "X-File-Name": encodeURIComponent(name) },
+    body: bytes
+  });
+}
+
+test("desktop files reach the phone intact without exposing local files or desktop credentials", async (context) => {
+  const received = [];
+  const { session, downloadDirectory, testRoot } = await createTestReceiver(context, {
+    onItem: (item) => received.push(item)
+  });
+  const { baseUrl, token } = getSessionAccess(session);
+  const bytes = Buffer.from([0, 1, 2, 127, 128, 255]);
+  const name = `报告-${path.basename(testRoot)}.bin`;
+  const response = await sendToPhone(session, name, bytes);
+  assert.equal(response.status, 200);
+  const { item } = await response.json();
+  assert.deepEqual(Object.keys(item).sort(), ["id", "name", "size"]);
+  assert.equal(received.length, 0);
+  assert.deepEqual(await fsp.readdir(downloadDirectory), []);
+
+  const headers = { "X-Session-Token": token };
+  const listed = await fetch(`${baseUrl}/api/outgoing`, { headers });
+  assert.deepEqual((await listed.json()).items, [item]);
+  const desktopList = await fetch(`${baseUrl}/api/outgoing`, {
+    headers: { "X-Desktop-Token": session.started.desktopToken }
+  });
+  assert.deepEqual((await desktopList.json()).items, [item]);
+  const url = `${baseUrl}/api/outgoing/${item.id}?key=${token}`;
+  const download = await fetch(url);
+  assert.equal(download.status, 200);
+  assert.match(download.headers.get("content-disposition"), /^attachment;/);
+  assert.ok(download.headers.get("content-disposition").includes(encodeURIComponent(name)));
+  assert.equal(download.headers.get("content-type"), "application/octet-stream");
+  assert.deepEqual(Buffer.from(await download.arrayBuffer()), bytes);
+
+  // Received files remain private to the computer and clearing receive history does not revoke outgoing files.
+  const incoming = await uploadFile(baseUrl, token, "private.txt", Buffer.from("private"));
+  const incomingItem = (await incoming.json()).item;
+  assert.equal((await fetch(`${baseUrl}/api/outgoing/${incomingItem.id}?key=${token}`)).status, 404);
+  await session.clearItems();
+  assert.equal((await fetch(url)).status, 200);
+
+  const dirs = (await fsp.readdir(os.tmpdir())).filter((entry) => entry.startsWith("lan-drop-outgoing-"));
+  const temporary = dirs.map((entry) => path.join(os.tmpdir(), entry)).find((dir) => fs.existsSync(path.join(dir, name)));
+  assert.ok(temporary, "outgoing copy should be in a session temporary directory");
+  await session.stop("test");
+  assert.equal(fs.existsSync(temporary), false);
+  assert.equal(fs.existsSync(incomingItem.savedPath), true);
+});
+
+test("outgoing APIs reject missing, wrong, and mobile-only upload credentials", async (context) => {
+  const { session } = await createTestReceiver(context);
+  const { baseUrl, token } = getSessionAccess(session);
+  assert.equal((await fetch(`${baseUrl}/api/outgoing`)).status, 401);
+  assert.equal((await fetch(`${baseUrl}/api/config`)).status, 401);
+  for (const candidate of ["", "wrong", token]) {
+    assert.equal((await sendToPhone(session, "secret.txt", Buffer.from("secret"), candidate)).status, 401);
+  }
+  const response = await sendToPhone(session, "secret.txt", Buffer.from("secret"));
+  const { item } = await response.json();
+  for (const key of ["", "wrong", session.started.desktopToken]) {
+    assert.equal((await fetch(`${baseUrl}/api/outgoing/${item.id}?key=${key}`)).status, 401);
+  }
+  assert.equal((await fetch(`${baseUrl}/api/outgoing/missing?key=${token}`)).status, 404);
+  const config = await fetch(`${baseUrl}/api/config`, { headers: { "X-Session-Token": token } });
+  const data = await config.json();
+  assert.equal(data.expiresAt, session.started.expiresAt);
+  assert.equal(JSON.stringify(data).includes(session.started.desktopToken), false);
+});
+
+test("outgoing uploads enforce single-file and shared session limits", async (context) => {
+  const { session } = await createTestReceiver(context, {
+    limits: { maxFileBytes: 1024, maxSessionBytes: 2048 }
+  });
+  const { baseUrl, token } = getSessionAccess(session);
+  assert.equal((await sendToPhone(session, "large", Buffer.alloc(1025))).status, 413);
+  assert.equal((await sendToPhone(session, "empty", Buffer.alloc(0))).status, 400);
+  assert.equal((await sendToPhone(session, "one", Buffer.alloc(1024))).status, 200);
+  assert.equal((await uploadFile(baseUrl, token, "two", Buffer.alloc(1024))).status, 200);
+  assert.equal((await sendToPhone(session, "three", Buffer.alloc(1))).status, 413);
+});
+
+test("outgoing names are sanitized and duplicate names keep both files", async (context) => {
+  const { session } = await createTestReceiver(context);
+  const { baseUrl, token } = getSessionAccess(session);
+  const first = await (await sendToPhone(session, "../../报告.txt", Buffer.from("first"))).json();
+  const second = await (await sendToPhone(session, "../../报告.txt", Buffer.from("second"))).json();
+  assert.equal(first.item.name, "报告.txt");
+  assert.equal(second.item.name, "报告 (1).txt");
+  assert.equal(await (await fetch(`${baseUrl}/api/outgoing/${first.item.id}?key=${token}`)).text(), "first");
+  assert.equal(await (await fetch(`${baseUrl}/api/outgoing/${second.item.id}?key=${token}`)).text(), "second");
+});
+
+test("stopping during an outgoing upload cleans partial files and terminates promptly", async (context) => {
+  const { session } = await createTestReceiver(context);
+  const { baseUrl } = getSessionAccess(session);
+  const request = http.request(`${baseUrl}/api/outgoing`, {
+    method: "POST", headers: {
+      "X-Desktop-Token": session.started.desktopToken,
+      "X-File-Name": "interrupted.bin",
+      "Content-Length": "1024"
+    }
+  });
+  request.on("error", () => {});
+  context.after(() => request.destroy());
+  request.write(Buffer.alloc(100));
+  // Wait for the actual partial to exist before stopping the server mid-request.
+  let partialDirectory;
+  for (let attempt = 0; attempt < 100 && !partialDirectory; attempt += 1) {
+    for (const entry of await fsp.readdir(os.tmpdir())) {
+      if (!entry.startsWith("lan-drop-outgoing-")) continue;
+      const dir = path.join(os.tmpdir(), entry);
+      if ((await fsp.readdir(dir)).some((file) => file.endsWith(".part"))) partialDirectory = dir;
+    }
+    if (!partialDirectory) await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.ok(partialDirectory);
+  await session.stop("test");
+  assert.equal(fs.existsSync(partialDirectory), false);
 });

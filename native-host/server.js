@@ -154,10 +154,10 @@ function safeFileName(rawName) {
   return truncateUtf8(cleaned, 200) || "未命名文件";
 }
 
-function contentDisposition(fileName) {
+function contentDisposition(fileName, disposition = "inline") {
   const fallback = fileName.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
   const encoded = encodeURIComponent(fileName).replace(/['()]/g, escape);
-  return `inline; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+  return `${disposition}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
 function getRemoteAddress(request) {
@@ -270,11 +270,15 @@ async function createReceiverSession(options) {
   const durationSeconds = clampInteger(settings.durationSeconds, 60, 60 * 60, 10 * 60);
   const sessionToken = crypto.randomBytes(32).toString("hex");
   const localAccessToken = crypto.randomBytes(32).toString("hex");
+  const desktopToken = crypto.randomBytes(32).toString("hex");
   const downloadDirectory = path.resolve(
     settings.downloadDirectory || defaultDownloadDirectory()
   );
   const staticRoot = path.resolve(settings.staticRoot || path.join(__dirname, "public"));
   const items = new Map();
+  const outgoing = new Map();
+  const uploads = new Set();
+  let outgoingDirectory;
   const partialFiles = new Set();
   const rateLimits = new Map();
 
@@ -291,6 +295,15 @@ async function createReceiverSession(options) {
 
   function isAuthorized(request) {
     return secureEqual(sessionToken, request.headers["x-session-token"]);
+  }
+
+  function isDesktop(request) {
+    return ["127.0.0.1", "::1"].includes(getRemoteAddress(request)) &&
+      secureEqual(desktopToken, request.headers["x-desktop-token"]);
+  }
+
+  function outgoingItem(item) {
+    return { id: item.id, name: item.name, size: item.size };
   }
 
   function checkRateLimit(request) {
@@ -400,8 +413,9 @@ async function createReceiverSession(options) {
     }
   }
 
-  function handleUpload(request, response, port) {
-    if (!isAuthorized(request)) {
+  function handleUpload(request, response, port, toPhone = false) {
+    // Both directions share streaming limits; reserve space until atomic publication completes.
+    if (!(toPhone ? isDesktop(request) : isAuthorized(request))) {
       sendJson(response, 401, { ok: false, message: "接收密钥无效" });
       request.resume();
       return;
@@ -440,9 +454,17 @@ async function createReceiverSession(options) {
       .split(";")[0]
       .trim()
       .slice(0, 120);
-    const partialPath = path.join(downloadDirectory, `.lan-drop-${id}.part`);
+    const targetDirectory = toPhone ? outgoingDirectory : downloadDirectory;
+    const partialPath = path.join(targetDirectory, `.lan-drop-${id}.part`);
     partialFiles.add(partialPath);
     const output = fs.createWriteStream(partialPath, { flags: "wx", mode: 0o600 });
+    let finishUpload;
+    const uploadDone = new Promise((resolve) => { finishUpload = resolve; });
+    uploads.add(uploadDone);
+    uploadDone.then(() => uploads.delete(uploadDone));
+    output.on("close", () => {
+      if (rejected) finishUpload();
+    });
 
     let receivedBytes = 0;
     let rejected = false;
@@ -468,6 +490,7 @@ async function createReceiverSession(options) {
       }
       rejected = true;
       releaseReservation();
+      request.resume();
       output.destroy();
       removePartialFile();
       sendJson(response, statusCode, { ok: false, message });
@@ -517,12 +540,11 @@ async function createReceiverSession(options) {
       if (rejected) {
         return;
       }
-      releaseReservation();
-
       try {
+        if (stopped) throw new Error("传输会话已结束");
         const published = await publishWithoutOverwrite(
           partialPath,
-          downloadDirectory,
+          targetDirectory,
           name
         );
         partialFiles.delete(partialPath);
@@ -537,6 +559,11 @@ async function createReceiverSession(options) {
           remoteAddress: getRemoteAddress(request)
         };
         completedSessionBytes += receivedBytes;
+        if (toPhone) {
+          outgoing.set(id, item);
+          sendJson(response, 200, { ok: true, item: outgoingItem(item) });
+          return;
+        }
         items.set(id, item);
         const publicItem = createPublicItem(item, port);
         try {
@@ -549,32 +576,38 @@ async function createReceiverSession(options) {
         await fsp.unlink(partialPath).catch(() => {});
         partialFiles.delete(partialPath);
         sendJson(response, 500, { ok: false, message: `文件接收失败：${error.message}` });
+      } finally {
+        releaseReservation();
+        finishUpload();
       }
     });
   }
 
-  function handleFileDownload(request, response, requestUrl) {
-    if (!secureEqual(localAccessToken, requestUrl.searchParams.get("key"))) {
+  function handleFileDownload(request, response, requestUrl, toPhone = false) {
+    const token = toPhone ? sessionToken : localAccessToken;
+    if (!secureEqual(token, requestUrl.searchParams.get("key"))) {
       sendJson(response, 401, { ok: false, message: "Unauthorized" });
       return;
     }
 
-    const id = decodeURIComponent(requestUrl.pathname.slice("/api/items/".length));
-    const item = items.get(id);
+    const prefix = toPhone ? "/api/outgoing/" : "/api/items/";
+    const id = requestUrl.pathname.slice(prefix.length);
+    const item = (toPhone ? outgoing : items).get(id);
     if (!item) {
       sendJson(response, 404, { ok: false, message: "文件已不存在" });
       return;
     }
 
     response.writeHead(200, {
-      "Content-Type": item.mime || "application/octet-stream",
+      "Content-Type": toPhone ? "application/octet-stream" : item.mime || "application/octet-stream",
       "Content-Length": item.size,
-      "Content-Disposition": contentDisposition(item.name),
+      "Content-Disposition": contentDisposition(item.name, toPhone ? "attachment" : "inline"),
       "Cache-Control": "no-store",
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer"
     });
     const stream = fs.createReadStream(item.path);
+    response.on("close", () => stream.destroy());
     stream.on("error", () => {
       if (!response.headersSent) {
         sendJson(response, 500, { ok: false, message: "无法读取已保存文件" });
@@ -607,10 +640,14 @@ async function createReceiverSession(options) {
       return;
     }
     if (request.method === "GET" && requestUrl.pathname === "/api/config") {
+      if (!isAuthorized(request)) {
+        sendJson(response, 401, { ok: false, message: "会话已失效，请重新扫码" });
+        return;
+      }
       sendJson(response, 200, {
         ok: true,
         limits,
-        expiresAt: Date.now() + durationSeconds * 1000
+        expiresAt
       });
       return;
     }
@@ -624,6 +661,24 @@ async function createReceiverSession(options) {
     }
     if (request.method === "POST" && requestUrl.pathname === "/api/upload") {
       handleUpload(request, response, server.address().port);
+      return;
+    }
+    if (requestUrl.pathname === "/api/outgoing") {
+      if (request.method === "POST") {
+        handleUpload(request, response, server.address().port, true);
+        return;
+      }
+      if (request.method === "GET") {
+        if (!isAuthorized(request) && !isDesktop(request)) {
+          sendJson(response, 401, { ok: false, message: "会话已失效，请重新扫码" });
+          return;
+        }
+        sendJson(response, 200, { ok: true, items: Array.from(outgoing.values(), outgoingItem) });
+        return;
+      }
+    }
+    if (request.method === "GET" && requestUrl.pathname.startsWith("/api/outgoing/")) {
+      handleFileDownload(request, response, requestUrl, true);
       return;
     }
     if (request.method === "GET" && requestUrl.pathname.startsWith("/api/items/")) {
@@ -648,6 +703,7 @@ async function createReceiverSession(options) {
     });
     await fsp.mkdir(downloadDirectory, { recursive: true, mode: 0o700 });
     await cleanStalePartialFiles(downloadDirectory);
+    outgoingDirectory = await fsp.mkdtemp(path.join(os.tmpdir(), "lan-drop-outgoing-"));
   } catch (error) {
     if (server?.listening) {
       await new Promise((resolve) => server.close(resolve));
@@ -703,12 +759,16 @@ async function createReceiverSession(options) {
         });
         server.closeAllConnections?.();
       });
+      // Wait for in-flight writes and atomic publication before removing session copies.
+      await Promise.all(Array.from(uploads));
       await Promise.all(
         Array.from(partialFiles).map(async (partialPath) => {
           await fsp.unlink(partialPath).catch(() => {});
           partialFiles.delete(partialPath);
         })
       );
+      await fsp.rm(outgoingDirectory, { recursive: true, force: true });
+      outgoing.clear();
       settings.onStopped?.(reason || "manual");
     })();
     return stoppingPromise;
@@ -722,6 +782,7 @@ async function createReceiverSession(options) {
   return {
     started: {
       port,
+      desktopToken,
       mobileUrls,
       expiresAt,
       limits,

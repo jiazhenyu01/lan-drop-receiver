@@ -122,6 +122,17 @@ test("native messaging host starts, forwards text and exits after stop", async (
   assert.equal(received.item.kind, "text");
   assert.equal(received.item.text, "native bridge test");
 
+  const outgoing = await fetch(`http://127.0.0.1:${started.port}/api/outgoing`, {
+    method: "POST",
+    headers: { "X-Desktop-Token": started.desktopToken, "X-File-Name": "desktop.txt" },
+    body: "native desktop transfer"
+  });
+  assert.equal(outgoing.status, 200);
+  const { item } = await outgoing.json();
+  const download = await fetch(`http://127.0.0.1:${started.port}/api/outgoing/${item.id}?key=${token}`);
+  assert.equal(download.status, 200);
+  assert.equal(await download.text(), "native desktop transfer");
+
   client.send({ type: "stop" });
   const stopped = await client.waitFor("stopped");
   assert.equal(stopped.reason, "manual");

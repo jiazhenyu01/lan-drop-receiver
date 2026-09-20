@@ -187,6 +187,7 @@ function renderItems(items) {
 
 function render(state) {
   currentState = state;
+  document.querySelector("send-panel").setSession(state);
   const isRunning = state.status === "running";
   const isError = state.status === "error";
   const items = Array.isArray(state.items) ? state.items : [];

@@ -146,6 +146,28 @@ main {
   padding: 0 clamp(30px, 5vw, 76px) 70px;
 }
 
+.send-panel {
+  margin-top: 28px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.send-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.send-panel h2 { margin: 6px 0; font-size: 20px; }
+.send-panel p, .send-panel li { color: var(--muted); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.send-panel .send-status { color: var(--signal); }
+.send-panel ul:empty { display: none; }
+.send-panel button { padding: 12px 18px; border: 0; background: var(--signal); color: var(--night); font-weight: 700; cursor: pointer; }
+.send-panel button:disabled { opacity: 0.4; cursor: default; }
+
 .access-panel {
   display: grid;
   grid-template-columns: 112px minmax(0, 1fr);

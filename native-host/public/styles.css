@@ -180,6 +180,15 @@ h1 {
   font-size: 17px;
 }
 
+.download-note { color: var(--muted); font-size: 11px; line-height: 1.65; }
+.refresh-button { border: 0; background: transparent; color: var(--signal); padding: 10px; cursor: pointer; }
+.refresh-button:disabled { opacity: 0.4; }
+.download-file { display: flex; align-items: center; gap: 16px; padding: 14px 0; border-top: 1px solid var(--line); }
+.download-file > div { min-width: 0; flex: 1; }
+.download-file strong { display: block; font-size: 12px; overflow-wrap: anywhere; }
+.download-file span { display: block; margin-top: 5px; font-size: 10px; color: var(--muted); }
+.download-file a { flex-shrink: 0; padding: 10px 14px; background: var(--signal); color: var(--night); text-decoration: none; font-size: 12px; font-weight: 700; }
+
 .transfer-card header > strong {
   color: var(--muted);
   font-family: "SFMono-Regular", "Menlo", monospace;

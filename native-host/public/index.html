@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#0c110d" />
-    <title>发送到 Mac</title>
+    <title>与 Mac 互传</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -17,7 +17,7 @@
           <span class="brand-mark">RX</span>
           <div>
             <p>LOCAL TRANSFER</p>
-            <h1>发送到 Mac</h1>
+            <h1>与 Mac 互传</h1>
           </div>
         </div>
         <div class="connection" id="connectionStatus">
@@ -29,6 +29,16 @@
       <section class="intro">
         <span class="section-index">01 / INPUT</span>
         <p>选择一种内容。所有传输只在当前局域网内完成，不经过云端。</p>
+      </section>
+
+      <section class="transfer-card">
+        <header>
+          <div><span>PC → PHONE</span><h2>接收电脑文件</h2></div>
+          <button class="refresh-button" id="refreshFiles" type="button">刷新</button>
+        </header>
+        <p class="download-note" id="downloadStatus" role="status">正在读取电脑发送的文件…</p>
+        <div id="downloadFiles"></div>
+        <p class="download-note">点击下载保存到手机。请在电脑关闭传输窗口前完成下载；若在应用内无法下载，请用系统浏览器打开链接。</p>
       </section>
 
       <section class="transfer-card text-transfer">

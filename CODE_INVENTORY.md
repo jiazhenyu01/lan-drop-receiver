@@ -23,13 +23,14 @@ lan-drop-receiver/
 - `background.js`：开关、Native Messaging 连接和当前会话状态。
 - `popup.html`、`popup.css`、`popup.js`：工具栏弹窗、地址、二维码和倒计时。
 - `receiver.html`、`receiver.css`、`receiver.js`：Mac 接收页面、手机访问地址和二维码。
+- `send-panel.js`：电脑发送文件到手机的独立组件，包含多选、进度和本次发送列表。
 - `vendor/qrcode.js`：MIT 许可的离线二维码生成库。
 
 ### `native-host/`
 
 - `host.js`：Chrome Native Messaging 的标准输入/输出协议。
-- `server.js`：按需 HTTP Server、鉴权、限流、上传和接收文件管理。
-- `public/index.html`、`public/styles.css`、`public/app.js`：手机发送页面。
+- `server.js`：按需 HTTP Server、鉴权、限流、双向上传、手机下载和接收文件管理。
+- `public/index.html`、`public/styles.css`、`public/app.js`：手机互传页面。
 
 ### `installer/`
 
@@ -67,13 +68,16 @@ lan-drop-receiver/
 
 ## 接收文件与运行时数据
 
-只有打开插件的接收开关后，Native Host 才会启动。每次会话只会创建：
+只有打开插件的接收开关后，Native Host 才会启动。每次会话会创建：
 
 ```text
 临时 HTTP 监听端口和随机会话密钥
+系统临时目录下的 lan-drop-outgoing-XXXXXX/（电脑发往手机的副本）
 ```
 
-不会为接收文件创建系统临时目录。文本只存在于扩展的 `chrome.storage.session` 内存状态中。图片和文件直接写入：
+电脑发出的副本在会话正常关闭、超时或浏览器断开时删除，不修改电脑原文件。进程被强制终止时可能留下临时副本，路径为 `os.tmpdir()/lan-drop-outgoing-XXXXXX/`，由系统临时目录清理策略管理。
+
+手机发送的文本只存在于扩展的 `chrome.storage.session` 内存状态中。手机发送的图片和文件直接写入：
 
 ```text
 ~/Documents/局域网互传/
@@ -87,7 +91,7 @@ lan-drop-receiver/
 
 上传成功后，分片会原子发布为原文件名；如已有同名文件，则自动使用 `文件名 (1).扩展名`，绝不覆盖已有文件。
 
-以下操作只清除会话记录或未完成分片，不删除完整文件：
+以下操作不删除手机已发送到电脑的完整文件（关闭会话时会删除电脑发出的临时副本）：
 
 - 手动关闭接收开关。
 - 十分钟倒计时结束。
